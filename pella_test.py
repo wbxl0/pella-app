@@ -69,7 +69,7 @@ def run_test():
     
     with SB(uc=True, xvfb=True) as sb:
         try:
-            # --- 第一阶段: 登录与状态识别 ---
+            # 1. 登录与状态提取
             sb.uc_open_with_reconnect("https://www.pella.app/login", 10)
             sb.sleep(5)
             sb.uc_gui_click_captcha()
@@ -84,7 +84,6 @@ def run_test():
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
 
-            # --- 第二阶段: 检查 Pella 状态 ---
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(8) 
             expiry_info = "未知"
@@ -104,13 +103,12 @@ def run_test():
                     send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_info}", None)
                     return 
 
-            # --- 第三阶段: 进入续期网站点击第一个 Continue ---
+            # 2. 进入续期网站并点击第一个 Continue
             logger.info(f"跳转至续期网站: {renew_url}")
             sb.uc_open_with_reconnect(renew_url, 10)
             sb.sleep(5)
             
-            # 点击第一个 Continue (id="submit-button", data-ref="first")
-            logger.info("执行第一个 Continue 强力点击...")
+            logger.info("点击第一个 Continue (data-ref='first')...")
             for i in range(5):
                 try:
                     if sb.is_element_visible('button#submit-button[data-ref="first"]'):
@@ -118,61 +116,73 @@ def run_test():
                         sb.sleep(3)
                         if len(sb.driver.window_handles) > 1:
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
-                        # 如果按钮消失，说明进入了人机挑战阶段
-                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'):
-                            break
+                        if not sb.is_element_visible('button#submit-button[data-ref="first"]'): break
                 except: pass
 
-            # --- 第四阶段: 处理 Cloudflare 人机挑战 (Kata 模式) ---
-            logger.info("检测人机验证中...")
+            # 3. Cloudflare 人机穿透 (Kata 模式)
+            logger.info("尝试 Kata 模式穿透 Cloudflare...")
             sb.sleep(5)
             try:
                 cf_iframe = 'iframe[src*="cloudflare"]'
                 if sb.is_element_visible(cf_iframe):
-                    logger.info("发现 CF 验证，尝试 Kata 模式穿透...")
                     sb.switch_to_frame(cf_iframe)
                     sb.click('span.mark') 
                     sb.switch_to_parent_frame()
                     sb.sleep(6)
-                else:
-                    sb.uc_gui_click_captcha()
             except: pass
 
-            # --- 第五阶段: 强力点击 "I am not a robot" ---
-            logger.info("开始点击 'I am not a robot' (data-ref='captcha')...")
-            click_final = False
-            captcha_btn = 'button#submit-button[data-ref="captcha"]'
-            
-            for i in range(8): # 多次尝试应对广告
+            # 4. 点击 "I am not a robot"
+            logger.info("点击 'I am not a robot' (data-ref='captcha')...")
+            for i in range(5):
                 try:
-                    if sb.is_element_visible(captcha_btn):
-                        sb.js_click(captcha_btn)
+                    target = 'button#submit-button[data-ref="captcha"]'
+                    if sb.is_element_visible(target):
+                        sb.js_click(target)
                         sb.sleep(3)
-                        # 自动清理广告弹窗
                         if len(sb.driver.window_handles) > 1:
                             curr = sb.driver.current_window_handle
                             for handle in sb.driver.window_handles:
                                 if handle != curr:
-                                    sb.driver.switch_to.window(handle)
-                                    sb.driver.close()
+                                    sb.driver.switch_to.window(handle); sb.driver.close()
+                            sb.driver.switch_to.window(sb.driver.window_handles[0])
+                        if not sb.is_element_visible(target): break
+                except: pass
+
+            # 5. 【关键】等待 15 秒并点击最后的 "Go ->" 按钮
+            logger.info("等待 18 秒以确保计时结束并生成最终按钮...")
+            sb.sleep(18) 
+            
+            final_btn = 'button#submit-button[data-ref="show"]'
+            logger.info("开始执行 'Go ->' 最终按钮强力点击...")
+            click_final = False
+            for i in range(8): # 多次尝试以穿透广告
+                try:
+                    if sb.is_element_visible(final_btn):
+                        logger.info(f"第 {i+1} 次点击 Go -> 按钮...")
+                        sb.js_click(final_btn)
+                        sb.sleep(3)
+                        # 清理弹窗广告
+                        if len(sb.driver.window_handles) > 1:
+                            curr = sb.driver.current_window_handle
+                            for h in sb.driver.window_handles:
+                                if h != curr: sb.driver.switch_to.window(h); sb.driver.close()
                             sb.driver.switch_to.window(sb.driver.window_handles[0])
                         
-                        if not sb.is_element_visible(captcha_btn):
-                            click_final = True
-                            break
+                        if not sb.is_element_visible(final_btn):
+                            click_final = True; break
                 except: pass
             
             sb.sleep(5)
-            sb.save_screenshot("final_status.png")
+            sb.save_screenshot("final_action.png")
             
             if click_final:
-                send_tg_notification("续期成功 ✅", f"全流程完成（包含人机穿透）。操作前剩余: {expiry_info}", "final_status.png")
+                send_tg_notification("续期成功 ✅", f"全流程已走完。前状态: {expiry_info}", "final_action.png")
             else:
-                send_tg_notification("操作反馈 ⚠️", f"已尝试点击最终按钮，请检查截图。剩余: {expiry_info}", "final_status.png")
+                send_tg_notification("流程结束 ⚠️", f"已尝试点击最终按钮，请检查截图。剩余: {expiry_info}", "final_action.png")
 
         except Exception as e:
             sb.save_screenshot("error.png")
-            send_tg_notification("保活失败 ❌", f"错误详情: `{str(e)}`", "error.png")
+            send_tg_notification("保活失败 ❌", f"错误: `{str(e)}`", "error.png")
             raise e
 
 if __name__ == "__main__":
