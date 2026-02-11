@@ -64,8 +64,8 @@ def get_pella_code(mail_address, app_password):
 def run_test():
     email_addr = os.environ.get("PELLA_EMAIL")
     app_pw = os.environ.get("GMAIL_APP_PASSWORD")
-    target_server_url = "https://www.pella.app/server/2b3bbeef0eeb452299a11e431c3c2d5b"
-    renew_url = "https://cuty.io/m4w0wJrEmgEC"
+    target_server_url = "https://www.pella.app/server/a75892b5dd5e4e75bf0782f60fe5cfd1"
+    renew_url = "https://cuty.io/Sku4r8nmd"
     
     with SB(uc=True, xvfb=True) as sb:
         try:
