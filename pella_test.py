@@ -9,7 +9,7 @@ from seleniumbase import SB
 from loguru import logger
 
 # ==========================================
-# 1. TG 通知功能
+# 1. TG 通知功能 (保持不变)
 # ==========================================
 def send_tg_notification(status, message, photo_path=None):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -69,7 +69,8 @@ def run_test():
     
     with SB(uc=True, xvfb=True) as sb:
         try:
-            # --- 第一阶段: 登录与状态识别 ---
+            # --- 第一阶段: 登录与状态识别 (面板监控日志) ---
+            logger.info("🚀 [面板监控] 正在启动 Pella 登录流程...")
             sb.uc_open_with_reconnect("https://www.pella.app/login", 10)
             sb.sleep(5)
             sb.uc_gui_click_captcha()
@@ -85,31 +86,38 @@ def run_test():
             sb.sleep(10)
 
             # --- 第二阶段: 检查 Pella 状态 ---
+            logger.info("🔍 [面板监控] 正在检查服务器初始状态...")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(8) 
-            expiry_info = "未知"
-            try:
-                full_text = sb.get_text('div.max-h-full.overflow-auto')
-                d = re.search(r'(\d+)\s*天', full_text)
-                h = re.search(r'(\d+)\s*小时', full_text)
-                m = re.search(r'(\d+)\s*分钟', full_text)
-                parts = [f"{d.group(1)}天 " if d else "", f"{h.group(1)}小时 " if h else "", f"{m.group(1)}分钟" if m else ""]
-                expiry_info = "".join(parts).strip()
-            except: pass
+            
+            # 封装提取逻辑以便后续复用
+            def get_expiry_info(sb_obj):
+                try:
+                    full_text = sb_obj.get_text('div.max-h-full.overflow-auto')
+                    d = re.search(r'(\d+)\s*天', full_text)
+                    h = re.search(r'(\d+)\s*小时', full_text)
+                    m = re.search(r'(\d+)\s*分钟', full_text)
+                    parts = [f"{d.group(1)}天 " if d else "", f"{h.group(1)}小时 " if h else "", f"{m.group(1)}分钟" if m else ""]
+                    return "".join(parts).strip()
+                except: return "获取失败"
+
+            expiry_before = get_expiry_info(sb)
+            logger.info(f"🕒 [面板监控] 续期前剩余时间: {expiry_before}")
 
             target_btn_in_pella = 'a[href*="tpi.li/FSfV"]'
             if sb.is_element_visible(target_btn_in_pella):
                 btn_class = sb.get_attribute(target_btn_in_pella, "class")
                 if "opacity-50" in btn_class or "pointer-events-none" in btn_class:
-                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_info}", None)
+                    logger.warning("🕒 [面板监控] 按钮处于冷却中，任务结束。")
+                    send_tg_notification("保活报告 (冷却中) 🕒", f"按钮尚在冷却。剩余时间: {expiry_before}", None)
                     return 
 
             # --- 第三阶段: 进入续期网站点击第一个 Continue ---
-            logger.info(f"跳转至续期网站: {renew_url}")
+            logger.info(f"🚀 [面板监控] 跳转至续期网站: {renew_url}")
             sb.uc_open_with_reconnect(renew_url, 10)
             sb.sleep(5)
             
-            logger.info("执行第一个 Continue 强力点击...")
+            logger.info("🖱️ [面板监控] 执行第一个 Continue 强力点击...")
             for i in range(5):
                 try:
                     if sb.is_element_visible('button#submit-button[data-ref="first"]'):
@@ -122,12 +130,12 @@ def run_test():
                 except: pass
 
             # --- 第四阶段: 处理 Cloudflare 人机挑战 (Kata 模式 - 已验证有效) ---
-            logger.info("检测人机验证中...")
+            logger.info("🛡️ [面板监控] 检测人机验证中...")
             sb.sleep(5)
             try:
                 cf_iframe = 'iframe[src*="cloudflare"]'
                 if sb.is_element_visible(cf_iframe):
-                    logger.info("发现 CF 验证，尝试 Kata 模式穿透...")
+                    logger.info("✅ [面板监控] 发现 CF 验证，尝试 Kata 模式穿透...")
                     sb.switch_to_frame(cf_iframe)
                     sb.click('span.mark') 
                     sb.switch_to_parent_frame()
@@ -137,7 +145,7 @@ def run_test():
             except: pass
 
             # --- 第五阶段: 强力点击 "I am not a robot" ---
-            logger.info("开始点击 'I am not a robot' (data-ref='captcha')...")
+            logger.info("🖱️ [面板监控] 开始点击 'I am not a robot' (data-ref='captcha')...")
             captcha_btn = 'button#submit-button[data-ref="captcha"]'
             for i in range(8): 
                 try:
@@ -156,7 +164,7 @@ def run_test():
                 except: pass
 
             # --- 第六阶段: 等待 15s 计时并点击最终 Go 按钮 ---
-            logger.info("等待 18 秒计时结束...")
+            logger.info("⌛ [面板监控] 等待 18 秒计时结束...")
             sb.sleep(18)
             
             final_btn = 'button#submit-button[data-ref="show"]'
@@ -164,10 +172,9 @@ def run_test():
             for i in range(8):
                 try:
                     if sb.is_element_visible(final_btn):
-                        logger.info(f"第 {i+1} 次点击最终 Go 按钮...")
+                        logger.info(f"🖱️ [面板监控] 第 {i+1} 次点击最终 Go 按钮...")
                         sb.js_click(final_btn)
                         sb.sleep(3)
-                        # 清理可能弹出的最后广告
                         if len(sb.driver.window_handles) > 1:
                             curr = sb.driver.current_window_handle
                             for h in sb.driver.window_handles:
@@ -179,15 +186,23 @@ def run_test():
                             break
                 except: pass
             
-            sb.sleep(5)
-            sb.save_screenshot("final_status.png")
-            
+            # --- 第七阶段: 结果验证 (面板监控日志) ---
             if click_final:
-                send_tg_notification("续期成功 ✅", f"全流程完成（包含人机穿透与最终跳转）。操作前剩余: {expiry_info}", "final_status.png")
+                logger.info("🏁 [面板监控] 操作完成，正在回访 Pella 验证续期结果...")
+                sb.sleep(10)
+                sb.uc_open_with_reconnect(target_server_url, 10)
+                sb.sleep(8)
+                expiry_after = get_expiry_info(sb)
+                logger.info(f"🕒 [面板监控] 续期后剩余时间: {expiry_after}")
+                sb.save_screenshot("final_result.png")
+                send_tg_notification("续期成功 ✅", f"续期前: {expiry_before}\n续期后: {expiry_after}", "final_result.png")
             else:
-                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图确认跳转。剩余: {expiry_info}", "final_status.png")
+                sb.save_screenshot("final_status.png")
+                logger.warning("⚠️ [面板监控] 最终按钮点击未确认，请检查截图。")
+                send_tg_notification("操作反馈 ⚠️", f"流程已执行至最后，请检查截图确认跳转。操作前: {expiry_before}", "final_status.png")
 
         except Exception as e:
+            logger.error(f"🔥 [面板监控] 流程崩溃: {str(e)}")
             sb.save_screenshot("error.png")
             send_tg_notification("保活失败 ❌", f"错误详情: `{str(e)}`", "error.png")
             raise e
