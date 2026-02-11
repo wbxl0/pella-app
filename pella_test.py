@@ -59,17 +59,17 @@ def get_pella_code(mail_address, app_password):
     except Exception as e: return None
 
 # ==========================================
-# 3. Pella 自动化流程 (优化时间提取)
+# 3. Pella 自动化流程
 # ==========================================
 def run_test():
     email_addr = os.environ.get("PELLA_EMAIL")
     app_pw = os.environ.get("GMAIL_APP_PASSWORD")
-    target_server_url = "https://www.pella.app/server/2b3bbeef0eeb452299a11e431c3c2d5b"
+    target_server_url = "https://www.pella.app/server/c216766d5bbb47fc982167ec08c144b1"
     renew_url = "https://cuty.io/m4w0wJrEmgEC"
     
     with SB(uc=True, xvfb=True) as sb:
         try:
-            # --- 第一阶段: 登录与状态识别 [2026-02-11] ---
+            # --- 第一阶段: 登录与状态识别 ---
             logger.info("正在执行 Step 1: 登录流程")
             sb.uc_open_with_reconnect("https://www.pella.app/login", 10)
             sb.sleep(5)
@@ -85,14 +85,13 @@ def run_test():
             sb.type('input[data-input-otp="true"]', auth_code)
             sb.sleep(10)
 
-            # --- 第二阶段: 检查 Pella 状态 [2026-02-11] ---
+            # --- 第二阶段: 检查 Pella 状态 ---
             logger.info("正在执行 Step 2: 检查 Pella 状态")
             sb.uc_open_with_reconnect(target_server_url, 10)
             sb.sleep(10) 
             
             def get_expiry_time_raw(sb_obj):
                 try:
-                    # 改进的 JS：遍历所有 div，只抓取包含 'expiring' 关键字的那个容器
                     js_code = """
                     var divs = document.querySelectorAll('div');
                     for (var d of divs) {
@@ -104,10 +103,7 @@ def run_test():
                     return "未找到时间文本";
                     """
                     raw_text = sb_obj.execute_script(js_code)
-                    # 清洗文本
                     clean_text = " ".join(raw_text.split())
-                    
-                    # 截取核心部分：如果是英文，截取 expiring 之后的内容
                     if "expiring in" in clean_text:
                         return clean_text.split("expiring in")[1].split(".")[0].strip()
                     return clean_text[:60]
@@ -123,7 +119,7 @@ def run_test():
                     send_tg_notification("冷却中 🕒", f"按钮尚在冷却。剩余: {expiry_before}", None)
                     return 
 
-            # --- 第三阶段: 续期网站操作 [2026-02-11] ---
+            # --- 第三阶段: 续期网站操作 ---
             logger.info(f"正在执行 Step 3: 跳转至续期网站 {renew_url}")
             sb.uc_open_with_reconnect(renew_url, 10)
             sb.sleep(5)
@@ -134,10 +130,11 @@ def run_test():
                     sb.js_click('button#submit-button[data-ref="first"]')
                     sb.sleep(3)
                     
-                    # 【核心修改点】：在点击 first 之后，执行 simple_bypass.py
-                    logger.info("检测到人机验证，正在调用 simple_bypass.py...")
-                    os.system("python simple_bypass.py")
-                    logger.info("simple_bypass.py 执行完毕，继续后续操作")
+                    # --- 核心修复：获取当前 URL 并传给脚本 ---
+                    current_page_url = sb.get_current_url()
+                    logger.info(f"检测到人机验证，正在调用 simple_bypass.py 处理 URL: {current_page_url}")
+                    os.system(f"python simple_bypass.py {current_page_url}")
+                    # ------------------------------------
                     
                     if len(sb.driver.window_handles) > 1: sb.driver.switch_to.window(sb.driver.window_handles[0])
                     if not sb.is_element_visible('button#submit-button[data-ref="first"]'): break
@@ -181,7 +178,7 @@ def run_test():
                         sb.driver.switch_to.window(sb.driver.window_handles[0])
                     if not sb.is_element_visible(final_btn): break
 
-            # --- 第四阶段: 返回 Pella 验证结果 [2026-02-11] ---
+            # --- 第四阶段: 返回 Pella 验证结果 ---
             logger.info("正在执行 Step 4: 回访 Pella 验证结果")
             sb.sleep(5)
             sb.uc_open_with_reconnect(target_server_url, 10)
