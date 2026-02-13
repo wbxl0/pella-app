@@ -33,7 +33,7 @@ def send_tg_notification(status, message, photo_path=None):
 def get_pella_code(mail_address, app_password):
     logger.info("📡 正在连接 Gmail 抓取验证码...")
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail = imaplib.IMAP4_SSL("imap.qq.com")
         mail.login(mail_address, app_password)
         mail.select("inbox")
         for i in range(10):
